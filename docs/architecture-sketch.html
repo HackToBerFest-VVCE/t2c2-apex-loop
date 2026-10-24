@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>How CivicLens Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Noto+Sans+Kannada:wght@500&display=block" rel="stylesheet" />
+<style>
+  html, body { margin: 0; background: #fbf6ec; }
+  svg { display: block; font-family: 'DejaVu Sans', 'Segoe UI', Verdana, sans-serif; }
+  .ink { stroke: #1f1f1f; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .title { font-size: 48px; font-weight: 700; fill: #1f1f1f; }
+  .sub { font-size: 18px; font-style: italic; fill: #333; }
+  .h { font-size: 23px; font-weight: 700; fill: #1f1f1f; }
+  .hbig { font-size: 25px; font-weight: 700; fill: #1f1f1f; }
+  .t { font-size: 16.5px; fill: #333; }
+  .chip { font-size: 17px; fill: #2a2a2a; }
+  .note { font-family: 'Kalam', cursive; font-size: 21px; fill: #222; }
+  .num { font-size: 27px; font-weight: 700; fill: #1f1f1f; }
+  .lab { font-size: 19px; font-weight: 700; fill: #1f1f1f; }
+  .labi { font-size: 15px; font-style: italic; fill: #444; }
+  path.ink { fill: none; }
+  .kn { font-family: 'Noto Sans Kannada', sans-serif; }
+</style>
+</head>
+<body>
+<svg width="1600" height="900" viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Makes straight lines look hand-drawn -->
+    <filter id="rough" filterUnits="userSpaceOnUse" x="0" y="0" width="1600" height="900">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="7" />
+      <feDisplacementMap in="SourceGraphic" scale="4.5" />
+    </filter>
+    <marker id="head" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1,1 L11,6 L1,11 z" fill="#1f1f1f" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="800" y="64" class="title" text-anchor="middle">How CivicLens works</text>
+  <path d="M600 84 Q700 92 800 84 T1000 86" class="ink" filter="url(#rough)" />
+  <text x="850" y="120" class="sub" text-anchor="middle">snap a photo, it analyses, drafts &amp; sends it for you</text>
+
+  <!-- Sticky note (top left) -->
+  <g transform="rotate(-1.5 200 92)">
+    <rect x="40" y="42" width="320" height="100" rx="6" fill="#ffc9c9" class="ink" filter="url(#rough)" />
+    <text x="200" y="86" class="note" text-anchor="middle">on the road, at a bus stop,</text>
+    <text x="200" y="114" class="note" text-anchor="middle">anywhere you spot it</text>
+  </g>
+
+  <!-- Step 1 + phone -->
+  <circle cx="200" cy="208" r="35" fill="#fff" class="ink" filter="url(#rough)" />
+  <text x="200" y="218" class="num" text-anchor="middle">1</text>
+
+  <rect x="96" y="268" width="208" height="330" rx="28" fill="#ffe58f" class="ink" filter="url(#rough)" />
+  <rect x="116" y="310" width="168" height="246" rx="8" fill="#fff" class="ink" filter="url(#rough)" />
+  <path d="M168 576 Q200 572 232 576" class="ink" />
+  <text x="200" y="362" class="h" text-anchor="middle">You</text>
+  <text x="200" y="402" class="t" text-anchor="middle">snap a photo</text>
+  <text x="200" y="424" class="t" text-anchor="middle">of the problem</text>
+  <text x="200" y="482" class="t" text-anchor="middle" font-style="italic">"pothole on</text>
+  <text x="200" y="504" class="t" text-anchor="middle" font-style="italic">my street"</text>
+  <text x="200" y="652" class="lab" text-anchor="middle" style="font-size:22px">Your phone</text>
+
+  <!-- Arrow phone -> app -->
+  <text x="416" y="372" class="lab" text-anchor="middle">photo + GPS</text>
+  <text x="416" y="404" class="labi" text-anchor="middle">no app to install</text>
+  <path d="M322 434 C370 446 420 446 504 436" class="ink" marker-end="url(#head)" filter="url(#rough)" />
+
+  <!-- Step 2 + main box -->
+  <rect x="520" y="148" width="1040" height="612" rx="26" fill="#e9f3ff" class="ink" filter="url(#rough)" />
+  <circle cx="520" cy="146" r="35" fill="#fff" class="ink" filter="url(#rough)" />
+  <text x="520" y="156" class="num" text-anchor="middle">2</text>
+  <text x="1040" y="196" class="hbig" text-anchor="middle">CivicLens  (web app + AI, fully automatic)</text>
+  <path d="M712 214 Q900 220 1040 214 T1368 216" class="ink" filter="url(#rough)" />
+
+  <!-- Three stage boxes -->
+  <rect x="552" y="254" width="296" height="144" rx="14" fill="#ffe58f" class="ink" filter="url(#rough)" />
+  <text x="700" y="300" class="h" text-anchor="middle">AI Vision</text>
+  <text x="700" y="336" class="t" text-anchor="middle">looks at the photo: what's</text>
+  <text x="700" y="358" class="t" text-anchor="middle">wrong &amp; how serious</text>
+
+  <path d="M850 325 L888 325" class="ink" marker-end="url(#head)" filter="url(#rough)" />
+
+  <rect x="896" y="254" width="296" height="144" rx="14" fill="#c9f0c9" class="ink" filter="url(#rough)" />
+  <text x="1044" y="300" class="h" text-anchor="middle">Locator</text>
+  <text x="1044" y="336" class="t" text-anchor="middle">GPS → exact street</text>
+  <text x="1044" y="358" class="t" text-anchor="middle">address &amp; area</text>
+
+  <path d="M1194 325 L1232 325" class="ink" marker-end="url(#head)" filter="url(#rough)" />
+
+  <rect x="1240" y="254" width="288" height="144" rx="14" fill="#ffc9c9" class="ink" filter="url(#rough)" />
+  <text x="1384" y="300" class="h" text-anchor="middle">Router</text>
+  <text x="1384" y="336" class="t" text-anchor="middle">picks the right office:</text>
+  <text x="1384" y="358" class="t" text-anchor="middle">GBA · BWSSB · BESCOM</text>
+
+  <path d="M1384 400 L1386 424" class="ink" marker-end="url(#head)" filter="url(#rough)" />
+
+  <!-- What goes into the complaint -->
+  <rect x="552" y="430" width="976" height="306" rx="14" fill="#fff" class="ink" filter="url(#rough)" />
+  <text x="1040" y="474" class="h" text-anchor="middle">What goes into your complaint</text>
+
+  <rect x="580" y="522" width="290" height="84" rx="8" fill="#fbf6ec" class="ink" filter="url(#rough)" />
+  <text x="725" y="560" class="chip" text-anchor="middle">problem type</text>
+  <text x="725" y="582" class="chip" text-anchor="middle">&amp; severity</text>
+
+  <rect x="895" y="522" width="290" height="84" rx="8" fill="#fbf6ec" class="ink" filter="url(#rough)" />
+  <text x="1040" y="560" class="chip" text-anchor="middle">exact address</text>
+  <text x="1040" y="582" class="chip" text-anchor="middle">+ GPS pin</text>
+
+  <rect x="1210" y="522" width="290" height="84" rx="8" fill="#fbf6ec" class="ink" filter="url(#rough)" />
+  <text x="1355" y="560" class="chip" text-anchor="middle">Google Maps</text>
+  <text x="1355" y="582" class="chip" text-anchor="middle">link</text>
+
+  <rect x="580" y="628" width="290" height="84" rx="8" fill="#fbf6ec" class="ink" filter="url(#rough)" />
+  <text x="725" y="666" class="chip" text-anchor="middle">formal letter</text>
+  <text x="725" y="688" class="chip" text-anchor="middle">in English</text>
+
+  <rect x="895" y="628" width="290" height="84" rx="8" fill="#fbf6ec" class="ink" filter="url(#rough)" />
+  <text x="1040" y="666" class="chip" text-anchor="middle">same letter</text>
+  <text x="1040" y="690" class="chip kn" text-anchor="middle">in ಕನ್ನಡ</text>
+
+  <rect x="1210" y="628" width="290" height="84" rx="8" fill="#fbf6ec" class="ink" filter="url(#rough)" />
+  <text x="1355" y="666" class="chip" text-anchor="middle">your photo</text>
+  <text x="1355" y="688" class="chip" text-anchor="middle">attached</text>
+
+  <!-- Step 3: return path -->
+  <path d="M960 762 L960 802 L200 804 L200 690" class="ink" marker-end="url(#head)" filter="url(#rough)" />
+  <circle cx="800" cy="802" r="35" fill="#fff" class="ink" filter="url(#rough)" />
+  <text x="800" y="812" class="num" text-anchor="middle">3</text>
+  <text x="188" y="858" class="lab" style="font-size:19px">done!  sent from your Gmail to the right office, tracked in My Reports</text>
+
+  <!-- Sticky note (bottom right) -->
+  <g transform="rotate(-1 1360 812)">
+    <rect x="1150" y="770" width="420" height="86" rx="6" fill="#ffe58f" class="ink" filter="url(#rough)" />
+    <text x="1360" y="806" class="note" text-anchor="middle">free to use, works on any phone,</text>
+    <text x="1360" y="834" class="note" text-anchor="middle">photo to sent email, automatically</text>
+  </g>
+</svg>
+</body>
+</html>
