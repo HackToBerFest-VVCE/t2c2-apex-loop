@@ -16,7 +16,7 @@ Built by **Team Apex Loop** for Hacktoberfest VVCE 2026 · Track 2, Challenge B:
 
 ## The problem
 
-Potholes, broken streetlights, overflowing garbage bins and water leaks stay unfixed for weeks, mostly because nobody reports them properly. People don't know which authority is responsible (the city corporation, the water board, the electricity company or the gram panchayat), writing a formal complaint takes effort, and many people are more comfortable in Kannada than in English.
+Potholes, broken streetlights, overflowing garbage bins and water leaks stay unfixed for weeks, mostly because nobody reports them properly. People don't know which authority is responsible, writing a formal complaint takes effort, and many people are more comfortable in Kannada than in English.
 
 The problem doesn't end once a complaint is filed, either:
 
@@ -30,7 +30,7 @@ The problem doesn't end once a complaint is filed, either:
 | 1. **Snap** | Take a photo with the in-app camera, or upload one from the gallery. |
 | 2. **Locate** | Uses the GPS saved in the photo (EXIF, JPEG and HEIC), otherwise the phone's live GPS, then turns it into a street address. If an old gallery photo has no location, the app warns you instead of guessing. |
 | 3. **Analyse** | An AI vision model identifies the issue type, severity and responsible department, and writes a short description in English and Kannada. |
-| 4. **Route** | A rules engine picks the right authority for the problem and location: Bengaluru's city corporations under the Greater Bengaluru Authority, BWSSB, BESCOM, CESC and other ESCOMs, city corporations elsewhere, or gram panchayats. |
+| 4. **Route** | A rules engine picks the responsible government authority based on the type of problem and where it is. |
 | 5. **De-duplicate** | If the same kind of problem was already reported within about 15 m and isn't fixed yet, no new email is sent. The citizen adds their support instead, and the authority gets **one escalation email** at 3, 5, 10, 25… reports. |
 | 6. **Send** | A formal bilingual letter (English and Kannada) with the address, GPS coordinates and a map link is sent from the citizen's own Gmail, with the photo attached, in one tap. |
 | 7. **Close the loop** | An admin dashboard lists every sent complaint. Marking one as fixed emails everyone who reported or supported it, and their app shows "Fixed 🎉". |
@@ -40,7 +40,7 @@ The problem doesn't end once a complaint is filed, either:
 - 📸 **In-app camera** that works on phones and laptops, plus gallery upload
 - 📍 **Accurate location**: photo EXIF GPS, then live GPS, then reverse geocoding, with a warning for stale photos
 - 🤖 **AI triage**: issue type, severity, department and a bilingual description, with automatic failover between AI providers
-- 🏛️ **Authority routing** for Karnataka: GBA corporations, BWSSB, ESCOMs, city corporations and gram panchayats
+- 🏛️ **Authority routing**: picks the responsible government authority from the problem type and location
 - 🧭 **Spatial de-duplication** with a support counter and milestone escalations, so departments aren't spammed
 - ✉️ **One-tap Gmail sending** with the photo attached, through Google sign-in (OAuth 2.0)
 - 🗣️ **Bilingual letters**: formal English and Kannada, editable in a full-screen mobile editor
