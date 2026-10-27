@@ -8,13 +8,15 @@ const GROQ_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b';
 
 /**
  * Tried in order until one answers. Groq is a different provider, so it keeps working when
- * Google's models are overloaded. A provider is skipped when its API key isn't set.
+ * Google's models are overloaded. GROQ_API_KEY_2 is a backup key, used if the first one fails.
+ * An attempt is skipped when its API key isn't set.
  */
 const ATTEMPTS = [
-  { provider: 'gemini', model: 'gemini-3.5-flash' },
-  { provider: 'groq', model: GROQ_MODEL },
-  { provider: 'gemini', model: 'gemini-3.8-flash' },
-  { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
+  { provider: 'gemini', model: 'gemini-3.5-flash', key: 'GEMINI_API_KEY' },
+  { provider: 'groq', model: GROQ_MODEL, key: 'GROQ_API_KEY' },
+  { provider: 'groq', model: GROQ_MODEL, key: 'GROQ_API_KEY_2' },
+  { provider: 'gemini', model: 'gemini-3.8-flash', key: 'GEMINI_API_KEY' },
+  { provider: 'gemini', model: 'gemini-3.1-flash-lite', key: 'GEMINI_API_KEY' },
 ];
 
 /** Seconds to wait for one model before trying the next. */
@@ -34,6 +36,9 @@ Respond with ONLY a single JSON object — no markdown, no code fences, no extra
   "description": string,         // 1–2 short factual sentences (under 40 words) in English: what is visible and the risk to the public
   "descriptionKn": string        // the same description in natural, formal Kannada, equally concise
 }
+
+Manholes: an open, missing, broken, sunken or raised manhole cover is "Open / damaged manhole" (department "Water", severity "high"),
+not "Drainage / sewage". Use "Drainage / sewage" only for blocked drains or overflowing sewage.
 
 Severity guide: "high" = immediate safety hazard (deep pothole on a busy road, exposed live wires, major leak, large garbage pile blocking the road);
 "medium" = clear nuisance that will worsen; "low" = minor or cosmetic.`;
@@ -56,8 +61,8 @@ function extractJson(text) {
 
 let gemini;
 
-async function askGemini(model, image, mimeType, signal) {
-  gemini ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+async function askGemini(model, apiKey, image, mimeType, signal) {
+  gemini ??= new GoogleGenAI({ apiKey });
   const response = await gemini.models.generateContent({
     model,
     contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: image } }, { text: PROMPT }] }],
@@ -66,10 +71,10 @@ async function askGemini(model, image, mimeType, signal) {
   return response.text;
 }
 
-async function askGroq(model, image, mimeType, signal) {
+async function askGroq(model, apiKey, image, mimeType, signal) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
       temperature: 0.2,
@@ -96,7 +101,6 @@ async function askGroq(model, image, mimeType, signal) {
 }
 
 const ASK = { gemini: askGemini, groq: askGroq };
-const KEY_FOR = { gemini: 'GEMINI_API_KEY', groq: 'GROQ_API_KEY' };
 
 function describeFailure(err) {
   if (err?.timedOut) return `no reply after ${ATTEMPT_TIMEOUT}s`;
@@ -111,7 +115,7 @@ const isAuthError = (err) => err?.status === 401 || err?.status === 403;
  * @returns {Promise<{ status: number, json: object }>}
  */
 export async function handleAnalyze(body) {
-  const attempts = ATTEMPTS.filter((a) => process.env[KEY_FOR[a.provider]]);
+  const attempts = ATTEMPTS.filter((a) => process.env[a.key]);
   if (!attempts.length) {
     return { status: 500, json: { error: 'The server has no AI API key configured.', kind: 'config' } };
   }
@@ -123,20 +127,21 @@ export async function handleAnalyze(body) {
   const startedAt = Date.now();
   const elapsed = () => (Date.now() - startedAt) / 1000;
   const failures = [];
-  let retryLater = null; // { provider, model, at } when a model said "busy, try again in a few seconds"
+  let retryLater = null; // { attempt, at } when a model said "busy, try again in a few seconds"
 
-  async function attempt(provider, model) {
+  async function attempt(a) {
+    const { provider, model, key } = a;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT * 1000);
     try {
-      const text = await ASK[provider](model, image, mimeType, controller.signal);
+      const text = await ASK[provider](model, process.env[key], image, mimeType, controller.signal);
       return { status: 200, json: { result: extractJson(text), model } };
     } catch (err) {
       // Any failure (overload, timeout, bad key, unreadable reply) moves on to the next model.
       const e = controller.signal.aborted ? { timedOut: true } : err;
-      failures.push({ label: `${provider}/${model}`, err: e });
+      failures.push({ label: `${provider}/${model} (${key})`, err: e });
       if (e?.status === 429 && e.retryAfter && e.retryAfter <= 20 && !retryLater) {
-        retryLater = { provider, model, at: Date.now() + e.retryAfter * 1000 };
+        retryLater = { attempt: a, at: Date.now() + e.retryAfter * 1000 };
       }
       return null;
     } finally {
@@ -144,9 +149,9 @@ export async function handleAnalyze(body) {
     }
   }
 
-  for (const { provider, model } of attempts) {
+  for (const a of attempts) {
     if (elapsed() > TOTAL_BUDGET - ATTEMPT_TIMEOUT) break;
-    const ok = await attempt(provider, model);
+    const ok = await attempt(a);
     if (ok) return ok;
   }
 
@@ -155,7 +160,7 @@ export async function handleAnalyze(body) {
     const waitMs = Math.max(0, retryLater.at - Date.now());
     if (elapsed() + waitMs / 1000 + ATTEMPT_TIMEOUT <= TOTAL_BUDGET) {
       await new Promise((r) => setTimeout(r, waitMs));
-      const ok = await attempt(retryLater.provider, retryLater.model);
+      const ok = await attempt(retryLater.attempt);
       if (ok) return ok;
     }
   }

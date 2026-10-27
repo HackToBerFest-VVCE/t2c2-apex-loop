@@ -4,10 +4,11 @@ import { COMPLAINT_EMAIL } from '../lib/constants.js';
 import { authorityFor } from '../lib/authorities.js';
 import { englishLetter, englishSubject, escalationEmail, kannadaLetter } from '../lib/letters.js';
 import { addSupport, checkNearby } from '../lib/reportsApi.js';
+import { geocodeText, locateNow } from '../lib/location.js';
 import { sendComplaint } from '../lib/auth.js';
 import { loadPhoto } from '../lib/photos.js';
 import { SeverityBadge } from '../components/Badges.jsx';
-import { CheckIcon, CopyIcon, DocIcon, EditIcon, GoogleIcon, MailIcon } from '../components/Icons.jsx';
+import { CheckIcon, CopyIcon, DocIcon, EditIcon, GoogleIcon, MailIcon, PinIcon } from '../components/Icons.jsx';
 
 async function copyText(text) {
   try {
@@ -224,7 +225,71 @@ function DuplicatePanel({ match, user, onSignIn, onSupport, onDifferent, support
   );
 }
 
-export default function ComplaintScreen({ report, user, onSignIn, onSessionExpired, onStatus, onSupported, onGoReport }) {
+/**
+ * Shown when no location could be found (no GPS fix, no photo location). Never guesses: the user types
+ * an area or landmark, which is looked up on the map so the letter still gets an address, pin and the right office.
+ */
+function LocationFix({ onFound }) {
+  const [text, setText] = useState('');
+  const [state, setState] = useState({ busy: '', error: '' });
+
+  async function find(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setState({ busy: 'find', error: '' });
+    try {
+      const place = await geocodeText(text);
+      if (!place) setState({ busy: '', error: "Couldn't find that place. Try adding the area and city, e.g. \"Kuvempunagar, Mysuru\"." });
+      else onFound(place);
+    } catch {
+      setState({ busy: '', error: "Couldn't reach the map service. Check your connection and try again." });
+    }
+  }
+
+  async function retryGps() {
+    setState({ busy: 'gps', error: '' });
+    const place = await locateNow();
+    if (place.error) setState({ busy: '', error: `${place.error} Type the area instead.` });
+    else onFound(place);
+  }
+
+  return (
+    <div className="card locfix">
+      <p className="eyebrow">Location needed</p>
+      <h2 className="dup-title">Where is this problem?</h2>
+      <p className="dup-text">
+        We couldn't get your location, so the complaint has no address yet. Type the area or a landmark nearby.
+      </p>
+      <form className="locfix-row" onSubmit={find}>
+        <input
+          className="locfix-input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="e.g. Kuvempunagar, Mysuru"
+          aria-label="Area or landmark"
+        />
+        <button className="btn btn-primary" type="submit" disabled={Boolean(state.busy)}>
+          {state.busy === 'find' ? 'Finding…' : 'Find'}
+        </button>
+      </form>
+      <button className="link-btn locfix-gps" onClick={retryGps} disabled={Boolean(state.busy)}>
+        {state.busy === 'gps' ? 'Getting GPS…' : 'Or try GPS again'}
+      </button>
+      {state.error && <p className="send-meta is-error">{state.error}</p>}
+    </div>
+  );
+}
+
+export default function ComplaintScreen({
+  report,
+  user,
+  onSignIn,
+  onSessionExpired,
+  onStatus,
+  onSupported,
+  onUpdateReport,
+  onGoReport,
+}) {
   const [en, setEn] = useState('');
   const [kn, setKn] = useState('');
   const [sentVia, setSentVia] = useState(null);
@@ -239,7 +304,7 @@ export default function ComplaintScreen({ report, user, onSignIn, onSessionExpir
     setKn(kannadaLetter(signed));
     setDirect({ status: 'idle', message: '' });
     setSentVia(null);
-  }, [report?.id, signerName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [report?.id, signerName, report?.location]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Same problem already reported nearby and still open? Only checked before this report is sent.
   const [nearby, setNearby] = useState({ match: null, dismissed: false });
@@ -253,7 +318,7 @@ export default function ComplaintScreen({ report, user, onSignIn, onSessionExpir
     return () => {
       live = false;
     };
-  }, [report?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [report?.id, report?.coords?.lat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Full-size photo for the attachment; older reports only have the thumbnail.
   const [photo, setPhoto] = useState(null);
@@ -336,6 +401,15 @@ export default function ComplaintScreen({ report, user, onSignIn, onSessionExpir
     }
   }
 
+  // No address and no GPS pin: don't guess an office or send a letter with a blank location.
+  const needsLocation = !report.location && !report.coords && report.status === 'Drafted';
+  // Where the problem is: the street and area, or the GPS pin when there's no street name.
+  const where = report.location
+    ? report.location.split(', ').slice(0, 3).join(', ')
+    : report.coords
+      ? `${report.coords.lat.toFixed(5)}, ${report.coords.lon.toFixed(5)}`
+      : '';
+
   const showDuplicate = nearby.match && !nearby.dismissed && support.status !== 'done' && report.status === 'Drafted';
 
   return (
@@ -345,6 +419,18 @@ export default function ComplaintScreen({ report, user, onSignIn, onSessionExpir
         <h1>Your complaint</h1>
       </header>
 
+      {needsLocation && (
+        <LocationFix
+          onFound={(place) =>
+            onUpdateReport(report.id, {
+              location: place.address || '',
+              area: place.area ?? null,
+              coords: { lat: place.lat, lon: place.lon, accuracy: place.accuracy, source: place.source },
+            })
+          }
+        />
+      )}
+
       <div className="card summary-card">
         <img src={report.thumb} alt="" className="summary-thumb" />
         <div className="summary-body">
@@ -353,8 +439,14 @@ export default function ComplaintScreen({ report, user, onSignIn, onSessionExpir
             <SeverityBadge severity={report.severity} />
           </div>
           <p className="summary-to">
-            To <span>{authority.short}</span>
+            {needsLocation ? 'Add a location to find the right office' : <>To <span>{authority.short}</span></>}
           </p>
+          {where && (
+            <p className="summary-where" title={report.location || where}>
+              <PinIcon width={14} height={14} />
+              <span>{where}</span>
+            </p>
+          )}
         </div>
       </div>
 
@@ -377,7 +469,7 @@ export default function ComplaintScreen({ report, user, onSignIn, onSessionExpir
             {' '}You'll be told when it's fixed.
           </p>
         </div>
-      ) : showDuplicate ? (
+      ) : needsLocation ? null : showDuplicate ? (
         <DuplicatePanel
           match={nearby.match}
           user={user}

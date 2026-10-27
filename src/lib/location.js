@@ -78,6 +78,7 @@ async function getNetworkLocation() {
   const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
   if (!res.ok) throw new Error('Network location lookup failed.');
   const d = await res.json();
+  if (!d.city) throw new Error('Network location only knows the country.');
   return {
     address: [d.city, d.region].filter(Boolean).join(', '),
     area: { city: d.city, district: null, corporation: null, village: null },
@@ -91,12 +92,8 @@ async function fetchJson(url, timeoutMs = 8000) {
   return res.json();
 }
 
-/** Street-level address from OpenStreetMap Nominatim. */
-async function nominatimAddress(lat, lon) {
-  const data = await fetchJson(
-    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=en` +
-      `&lat=${lat}&lon=${lon}`
-  );
+/** Readable address + structured area (for routing) from a Nominatim result. */
+function fromNominatim(data) {
   const a = data.address ?? {};
   // House numbers belong to the nearest building, not the spot on the road, so they're left out;
   // a nearby named place is added as a landmark instead.
@@ -122,6 +119,55 @@ async function nominatimAddress(lat, lon) {
     corporation: /City Corporation/.test(a.city_district ?? '') ? a.city_district : null,
   };
   return { address, area };
+}
+
+/** Street-level address from OpenStreetMap Nominatim. */
+async function nominatimAddress(lat, lon) {
+  return fromNominatim(
+    await fetchJson(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=en` +
+        `&lat=${lat}&lon=${lon}`
+    )
+  );
+}
+
+/**
+ * Finds a place the user typed ("Kuvempunagar", "near Mysore Palace") when GPS isn't available.
+ * Searches Karnataka first. Returns { lat, lon, accuracy: null, source: 'typed', address, area } or null.
+ */
+export async function geocodeText(text) {
+  const q = text.trim();
+  if (!q) return null;
+  const search = (query) =>
+    fetchJson(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=in&accept-language=en` +
+        `&q=${encodeURIComponent(query)}`
+    );
+  let [hit] = await search(/karnataka/i.test(q) ? q : `${q}, Karnataka`);
+  if (!hit) [hit] = await search(q);
+  if (!hit) return null;
+  const { address, area } = fromNominatim(hit);
+  // Keep the user's own place name if the map labels the spot differently (e.g. a neighbouring area).
+  const typedPlace = q.split(',')[0].trim();
+  const town = [area.city || area.village, area.district !== (area.city || area.village) ? area.district : null]
+    .filter(Boolean)
+    .join(', ');
+  const label = address.toLowerCase().includes(typedPlace.toLowerCase()) ? address : [typedPlace, town].filter(Boolean).join(', ');
+  return { lat: Number(hit.lat), lon: Number(hit.lon), accuracy: null, source: 'typed', address: label || q, area };
+}
+
+/** Tries the device GPS again (e.g. after the user switched location on). Returns a place or { error }. */
+export async function locateNow() {
+  try {
+    const point = await getDeviceLocation();
+    try {
+      return { ...point, ...(await reverseGeocode(point.lat, point.lon)) };
+    } catch (e) {
+      return { ...point, address: '', area: null, addressError: e.message };
+    }
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
 /** Locality-level address from BigDataCloud; less detailed, used when Nominatim can't be reached. */

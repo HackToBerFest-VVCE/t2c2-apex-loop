@@ -2008,6 +2008,29 @@ body {
   font-weight: 600;
 }
 
+.summary-where {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--gray-500);
+  min-width: 0;
+}
+
+.summary-where svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.summary-where span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
 .send-panel {
   display: flex;
   flex-direction: column;
@@ -2546,4 +2569,45 @@ body {
 
 .dup-done .eyebrow {
   color: var(--low);
+}
+
+/* Missing-location fallback on the complaint screen */
+.locfix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border-color: rgba(251, 146, 60, 0.45);
+}
+
+.locfix .eyebrow {
+  color: var(--medium);
+}
+
+.locfix-row {
+  display: flex;
+  gap: 8px;
+}
+
+.locfix-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--gray-300);
+  background: var(--gray-50);
+  color: var(--gray-900);
+  font-size: 16px; /* 16px stops phones from zooming in */
+}
+
+.locfix-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.locfix-gps {
+  align-self: flex-start;
+  font-size: 13.5px;
 }

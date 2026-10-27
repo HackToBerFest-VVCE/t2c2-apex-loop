@@ -24,6 +24,7 @@ function localApi() {
 const SERVER_ENV = [
   'GEMINI_API_KEY',
   'GROQ_API_KEY',
+  'GROQ_API_KEY_2',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
   'SESSION_SECRET',

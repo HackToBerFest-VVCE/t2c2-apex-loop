@@ -9,6 +9,7 @@ export const ISSUE_TYPES = [
   'Overflowing bin',
   'Water leak',
   'Drainage / sewage',
+  'Open / damaged manhole',
   'Other',
 ];
 
@@ -21,6 +22,7 @@ export const ISSUE_TYPES_KN = {
   'Overflowing bin': 'ತುಂಬಿ ಹರಿಯುತ್ತಿರುವ ಕಸದ ತೊಟ್ಟಿ',
   'Water leak': 'ನೀರಿನ ಸೋರಿಕೆ',
   'Drainage / sewage': 'ಒಳಚರಂಡಿ ಸಮಸ್ಯೆ',
+  'Open / damaged manhole': 'ತೆರೆದ / ಹಾಳಾದ ಮ್ಯಾನ್‌ಹೋಲ್',
   Other: 'ನಾಗರಿಕ ಸಮಸ್ಯೆ',
 };
 

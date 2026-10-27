@@ -174,6 +174,7 @@ export default function App() {
             user={user}
             onSignIn={startSignIn}
             onSessionExpired={() => setUser((u) => ({ ...u, signedIn: false }))}
+            onUpdateReport={(id, patch) => updateReports((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))}
             onSupported={(id, mergedInto) =>
               updateReports((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'Sent', mergedInto } : r)))
             }

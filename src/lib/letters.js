@@ -35,7 +35,8 @@ function locationLines(r, gpsLabel, mapLabel) {
 
 export function englishSubject(r) {
   const where = shortPlace(r) ? ` at ${shortPlace(r)}` : '';
-  return `Complaint regarding ${r.issueType.toLowerCase()}${where}`;
+  const what = r.issueType === 'Open / damaged manhole' ? 'a dangerous open or damaged manhole' : r.issueType.toLowerCase();
+  return `Complaint regarding ${what}${where}`;
 }
 
 export function englishLetter(r) {

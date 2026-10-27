@@ -10,14 +10,19 @@ function pick(value, options, fallback) {
   return options.find((o) => o.toLowerCase() === v) ?? options.find((o) => v.includes(o.toLowerCase())) ?? fallback;
 }
 
+const MANHOLE = 'Open / damaged manhole';
+
 function normalize(raw) {
-  const issueType = pick(raw.issueType, ISSUE_TYPES, 'Other');
+  // Models sometimes shorten the label ("Open manhole"), so match on the key word.
+  const issueType = /manhole/i.test(String(raw.issueType ?? '')) ? MANHOLE : pick(raw.issueType, ISSUE_TYPES, 'Other');
+  const isManhole = issueType === MANHOLE;
   return {
     isCivicIssue: raw.isCivicIssue !== false,
     issueType,
     issueTypeKn: ISSUE_TYPES_KN[issueType],
-    severity: pick(raw.severity, SEVERITIES, 'medium'),
-    department: pick(raw.department, Object.keys(DEPARTMENTS), 'Roads'),
+    // A damaged manhole can kill someone, so it is always urgent and goes to the drainage authority.
+    severity: isManhole ? 'high' : pick(raw.severity, SEVERITIES, 'medium'),
+    department: isManhole ? 'Water' : pick(raw.department, Object.keys(DEPARTMENTS), 'Roads'),
     description: String(raw.description ?? '').trim(),
     descriptionKn: String(raw.descriptionKn ?? '').trim(),
   };
