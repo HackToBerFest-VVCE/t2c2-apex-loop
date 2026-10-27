@@ -1,9 +1,9 @@
 // "Sign in with Google" using the server-side authorization-code flow. Google gives us a refresh
 // token, which lives encrypted in the session cookie, so users stay signed in across refreshes
 // and can send Gmail without popups.
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { clearCookie, cookie } from './http.js';
-import { endSessionCookie, isAdmin, readSession, sessionCookie } from './session.js';
+import { endSessionCookie, isAdmin, readSession, seal, sessionCookie, unseal } from './session.js';
 
 const SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/gmail.send'];
 const STATE_COOKIE = 'cl_oauth_state';
@@ -20,9 +20,17 @@ const redirectUri = (origin) => `${origin}/api/auth/callback`;
 /** Only same-site paths are allowed as a post-login destination. */
 const safeReturn = (value) => (typeof value === 'string' && /^\/(?!\/)/.test(value) ? value : '/');
 
-/** GET /api/auth/login?return=/path → Google's consent screen. */
+/** PKCE-style challenge from the Android app: base64url SHA-256 of a secret the app keeps. */
+const isChallenge = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v);
+const sha256url = (text) => createHash('sha256').update(text).digest('base64url');
+
+/**
+ * GET /api/auth/login?return=/path → Google's consent screen.
+ * GET /api/auth/login?app=<challenge> → same, started from the Android app in Chrome; ends at /app-return.html.
+ */
 export async function login({ query, origin }) {
-  if (!authConfigured()) return { redirect: '/?auth=not-configured' };
+  const app = isChallenge(query.app) ? query.app : null;
+  if (!authConfigured()) return { redirect: app ? '/app-return.html#error=not-configured' : '/?auth=not-configured' };
   const state = randomBytes(16).toString('hex');
   const params = new URLSearchParams({
     client_id: clientId(),
@@ -37,7 +45,7 @@ export async function login({ query, origin }) {
   return {
     redirect: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
     // Remember the CSRF state and where to go afterwards for 10 minutes.
-    cookies: [cookie(STATE_COOKIE, JSON.stringify({ state, ret: safeReturn(query.return) }), { maxAge: 600 })],
+    cookies: [cookie(STATE_COOKIE, JSON.stringify({ state, ret: safeReturn(query.return), app }), { maxAge: 600 })],
   };
 }
 
@@ -50,9 +58,11 @@ export async function callback({ query, cookies, origin }) {
     saved = null;
   }
   const done = (path) => ({ redirect: path, cookies: [clearCookie(STATE_COOKIE)] });
+  // App sign-ins report back to the page that hands control to the app; web sign-ins to the site.
+  const fail = (reason) => done(saved?.app ? `/app-return.html#error=${reason}` : `/?auth=${reason}`);
 
-  if (query.error) return done(`/?auth=${query.error === 'access_denied' ? 'denied' : 'failed'}`);
-  if (!saved || !query.state || saved.state !== query.state || !query.code) return done('/?auth=failed');
+  if (query.error) return fail(query.error === 'access_denied' ? 'denied' : 'failed');
+  if (!saved || !query.state || saved.state !== query.state || !query.code) return fail('failed');
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -68,9 +78,9 @@ export async function callback({ query, cookies, origin }) {
   const tokens = await res.json().catch(() => ({}));
   if (!res.ok || !tokens.refresh_token || !tokens.id_token) {
     console.error('[auth] token exchange failed', res.status, tokens.error, tokens.error_description);
-    return done('/?auth=failed');
+    return fail('failed');
   }
-  if (!String(tokens.scope ?? '').includes('gmail.send')) return done('/?auth=no-gmail');
+  if (!String(tokens.scope ?? '').includes('gmail.send')) return fail('no-gmail');
 
   // The ID token came straight from Google over TLS, so its payload can be read without re-verifying.
   const profile = JSON.parse(Buffer.from(tokens.id_token.split('.')[1], 'base64url').toString('utf8'));
@@ -80,11 +90,30 @@ export async function callback({ query, cookies, origin }) {
     name: profile.name || profile.email,
     picture: profile.picture,
   };
+  if (saved.app) {
+    // A short-lived, encrypted one-time code. Only the app that started sign-in knows the secret behind
+    // the challenge, so another app catching the civiclens:// link can't swap it for the session.
+    const code = seal({ session, challenge: saved.app, exp: Date.now() + APP_CODE_TTL_MS });
+    return done(`/app-return.html#code=${code}`);
+  }
   const ret = saved.ret || '/';
   return {
     redirect: `${ret}${ret.includes('?') ? '&' : '?'}auth=ok`,
     cookies: [clearCookie(STATE_COOKIE), sessionCookie(session)],
   };
+}
+
+const APP_CODE_TTL_MS = 5 * 60 * 1000;
+
+/** POST /api/auth/app-token { code, verifier } → { token }: the app's sealed session, sent later as a Bearer token. */
+export async function appToken({ method, body }) {
+  if (method !== 'POST') return { status: 405, json: { error: 'Use POST.' } };
+  const data = typeof body?.code === 'string' ? unseal(body.code) : null;
+  const verifier = typeof body?.verifier === 'string' ? body.verifier : '';
+  if (!data?.session || !data.challenge || Date.now() > data.exp || sha256url(verifier) !== data.challenge) {
+    return { status: 400, json: { error: 'Sign-in expired. Please try again.' } };
+  }
+  return { json: { token: seal(data.session) } };
 }
 
 /** GET /api/auth/me → who is signed in (never exposes the token). */

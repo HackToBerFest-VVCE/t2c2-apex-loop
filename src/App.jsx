@@ -9,7 +9,7 @@ import { CameraIcon, ChartIcon, DocIcon, ListIcon, PinIcon } from './components/
 import { fetchStatuses, logSent } from './lib/reportsApi.js';
 import { loadReports, saveReports } from './lib/storage.js';
 import { deletePhoto } from './lib/photos.js';
-import { AUTH_MESSAGES, getUser, signIn, signOut } from './lib/auth.js';
+import { AUTH_MESSAGES, getUser, listenForAppSignIn, signIn, signOut } from './lib/auth.js';
 import AccountButton from './components/AccountButton.jsx';
 
 const TABS = [
@@ -53,6 +53,25 @@ export default function App() {
   useEffect(() => {
     getUser().then(setUser);
   }, []);
+
+  // Android app: Google sign-in finishes in Chrome, which hands control back here.
+  useEffect(
+    () =>
+      listenForAppSignIn((error) => {
+        if (error) {
+          setNotice(error);
+          return;
+        }
+        getUser().then(setUser);
+        try {
+          sessionStorage.setItem('civiclens.entered', '1');
+        } catch {
+          // Storage blocked: the landing page may show again next time.
+        }
+        setEntered(true);
+      }),
+    []
+  );
 
   // Has the authority fixed any complaint this user sent or supported? Check once when the app opens.
   useEffect(() => {

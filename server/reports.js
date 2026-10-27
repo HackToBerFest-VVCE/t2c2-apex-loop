@@ -3,7 +3,8 @@
 // (a nearby match count, or statuses of their own report ids). The full list is admin-only.
 import { db, dbConfigured } from './db.js';
 import { gmailSend } from './gmail.js';
-import { isAdmin, readSession } from './session.js';
+import { isAdmin, readSession, seal, unseal } from './session.js';
+import { sendText, whatsappConfigured } from './whatsappApi.js';
 
 const MAX_THUMB = 120_000; // thumbnails are ~15–40 KB as data URLs
 
@@ -19,7 +20,7 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const okThumb = (t) => (str(t, MAX_THUMB)?.startsWith('data:image/') ? t : null);
 
 /** Closest open (sent, not yet fixed) complaint of the same department near a point, or null. */
-async function findNearbyOpen(sql, { lat, lon, accuracy, department }) {
+export async function findNearbyOpen(sql, { lat, lon, accuracy, department }) {
   const radius = DEDUP_RADIUS_M + Math.min(Math.max(accuracy ?? 0, 0), MAX_GPS_TOLERANCE_M);
   const dLat = radius / 111_320;
   const dLon = radius / (111_320 * Math.cos((lat * Math.PI) / 180));
@@ -41,6 +42,69 @@ async function findNearbyOpen(sql, { lat, lon, accuracy, department }) {
 }
 
 /**
+ * Records a sent complaint. Returns false when the report is missing required fields.
+ * @param {{ email?: string, name?: string, phone?: string }} reporter - from the Google sign-in or WhatsApp
+ */
+export async function insertSent(sql, r, reporter = {}) {
+  const id = str(r.id, 64);
+  if (!id || !str(r.issueType) || !str(r.severity) || !str(r.department)) return false;
+  await sql`
+    INSERT INTO reports (id, created_at, reporter_email, reporter_name, reporter_phone, issue_type, severity, department,
+      authority, is_civic, description, description_kn, location, lat, lon, accuracy_m, coords_source, thumb, status, sent_at)
+    VALUES (${id}, ${str(r.createdAt, 40) ?? new Date().toISOString()}, ${reporter.email ?? null},
+      ${reporter.name ?? null}, ${reporter.phone ?? null}, ${str(r.issueType, 80)}, ${str(r.severity, 20)}, ${str(r.department, 40)},
+      ${str(r.authority, 200)}, ${r.isCivicIssue !== false}, ${str(r.description)}, ${str(r.descriptionKn)},
+      ${str(r.location, 400)}, ${num(r.coords?.lat)}, ${num(r.coords?.lon)}, ${num(r.coords?.accuracy)},
+      ${str(r.coords?.source, 20)}, ${okThumb(r.thumb)}, 'Sent', now())
+    ON CONFLICT (id) DO NOTHING`;
+  return true;
+}
+
+/**
+ * Adds a supporter (by email or WhatsApp phone) to an open complaint.
+ * Returns { gone } | { already } | { supporters, escalate, report } — escalate is true at a milestone, once.
+ */
+export async function addSupporter(sql, id, { email = null, name = null, phone = null, thumb, coords }) {
+  const [target] = id ? await sql`SELECT id, status, reporter_email, reporter_phone FROM reports WHERE id = ${id}` : [];
+  if (!target || target.status !== 'Sent') return { gone: true };
+  if (email && target.reporter_email?.toLowerCase() === email.toLowerCase()) return { already: true };
+  if (phone && target.reporter_phone === phone) return { already: true };
+  const inserted = await sql`
+    INSERT INTO report_supports (report_id, reporter_email, reporter_name, reporter_phone, thumb, lat, lon, accuracy_m)
+    VALUES (${id}, ${email}, ${name}, ${phone}, ${okThumb(thumb)},
+            ${num(coords?.lat)}, ${num(coords?.lon)}, ${num(coords?.accuracy)})
+    ON CONFLICT DO NOTHING
+    RETURNING id`;
+  if (!inserted.length) return { already: true };
+
+  const [updated] = await sql`
+    UPDATE reports SET supporters = supporters + 1 WHERE id = ${id}
+    RETURNING supporters, issue_type, severity, location, lat, lon, authority, created_at, sent_at`;
+  // Claim the milestone atomically so two people crossing it at once can't both trigger an email.
+  let escalate = false;
+  if (ESCALATION_AT.includes(updated.supporters)) {
+    const claimed = await sql`
+      UPDATE reports SET escalated_at = ${updated.supporters}
+      WHERE id = ${id} AND escalated_at < ${updated.supporters} RETURNING id`;
+    escalate = claimed.length > 0;
+  }
+  return {
+    supporters: updated.supporters,
+    escalate,
+    report: {
+      id,
+      issueType: updated.issue_type,
+      severity: updated.severity,
+      location: updated.location,
+      lat: updated.lat,
+      lon: updated.lon,
+      authority: updated.authority,
+      firstReportedAt: updated.sent_at ?? updated.created_at,
+    },
+  };
+}
+
+/**
  * POST /api/reports
  *   { action: 'sent', report }                → records a sent complaint (reporter taken from the sign-in, if any)
  *   { action: 'nearby', lat, lon, accuracy, department }
@@ -58,20 +122,8 @@ export async function reports({ method, body, cookies }) {
   const action = body?.action;
 
   if (action === 'sent') {
-    const r = body.report ?? {};
-    const id = str(r.id, 64);
-    if (!id || !str(r.issueType) || !str(r.severity) || !str(r.department)) {
-      return { status: 400, json: { error: 'Incomplete report.' } };
-    }
-    await sql`
-      INSERT INTO reports (id, created_at, reporter_email, reporter_name, issue_type, severity, department,
-        authority, is_civic, description, description_kn, location, lat, lon, accuracy_m, coords_source, thumb, status, sent_at)
-      VALUES (${id}, ${str(r.createdAt, 40) ?? new Date().toISOString()}, ${session?.email ?? null},
-        ${session?.name ?? null}, ${str(r.issueType, 80)}, ${str(r.severity, 20)}, ${str(r.department, 40)},
-        ${str(r.authority, 200)}, ${r.isCivicIssue !== false}, ${str(r.description)}, ${str(r.descriptionKn)},
-        ${str(r.location, 400)}, ${num(r.coords?.lat)}, ${num(r.coords?.lon)}, ${num(r.coords?.accuracy)},
-        ${str(r.coords?.source, 20)}, ${okThumb(r.thumb)}, 'Sent', now())
-      ON CONFLICT (id) DO NOTHING`;
+    const ok = await insertSent(sql, body.report ?? {}, { email: session?.email, name: session?.name });
+    if (!ok) return { status: 400, json: { error: 'Incomplete report.' } };
     return { json: { stored: true } };
   }
 
@@ -109,51 +161,16 @@ export async function reports({ method, body, cookies }) {
 
   if (action === 'support') {
     if (!session) return { status: 401, json: { error: 'Please sign in with Google to add your support.', kind: 'signin' } };
-    const id = str(body.id, 64);
     const r = body.report ?? {};
-    const [target] = id ? await sql`SELECT id, status, reporter_email FROM reports WHERE id = ${id}` : [];
-    if (!target || target.status !== 'Sent') {
-      return { status: 404, json: { error: 'That complaint is no longer open.', kind: 'gone' } };
-    }
-    if (target.reporter_email?.toLowerCase() === session.email.toLowerCase()) {
-      return { json: { already: true } };
-    }
-    const inserted = await sql`
-      INSERT INTO report_supports (report_id, reporter_email, reporter_name, thumb, lat, lon, accuracy_m)
-      VALUES (${id}, ${session.email}, ${session.name ?? null}, ${okThumb(r.thumb)},
-              ${num(r.coords?.lat)}, ${num(r.coords?.lon)}, ${num(r.coords?.accuracy)})
-      ON CONFLICT DO NOTHING
-      RETURNING id`;
-    if (!inserted.length) return { json: { already: true } };
-
-    const [updated] = await sql`
-      UPDATE reports SET supporters = supporters + 1 WHERE id = ${id}
-      RETURNING supporters, issue_type, severity, location, lat, lon, authority, created_at, sent_at`;
-    // Claim the milestone atomically so two people crossing it at once can't both trigger an email.
-    let escalate = false;
-    if (ESCALATION_AT.includes(updated.supporters)) {
-      const claimed = await sql`
-        UPDATE reports SET escalated_at = ${updated.supporters}
-        WHERE id = ${id} AND escalated_at < ${updated.supporters} RETURNING id`;
-      escalate = claimed.length > 0;
-    }
-    return {
-      json: {
-        supported: true,
-        escalate,
-        supporters: updated.supporters,
-        report: {
-          id,
-          issueType: updated.issue_type,
-          severity: updated.severity,
-          location: updated.location,
-          lat: updated.lat,
-          lon: updated.lon,
-          authority: updated.authority,
-          firstReportedAt: updated.sent_at ?? updated.created_at,
-        },
-      },
-    };
+    const res = await addSupporter(sql, str(body.id, 64), {
+      email: session.email,
+      name: session.name ?? null,
+      thumb: r.thumb,
+      coords: r.coords,
+    });
+    if (res.gone) return { status: 404, json: { error: 'That complaint is no longer open.', kind: 'gone' } };
+    if (res.already) return { json: { already: true } };
+    return { json: { supported: true, ...res } };
   }
 
   if (action === 'statuses') {
@@ -169,12 +186,25 @@ export async function reports({ method, body, cookies }) {
   return { status: 400, json: { error: 'Unknown action.' } };
 }
 
-/** Email everyone who reported or supported a complaint that it was fixed (Bcc, from the admin's Gmail). */
+/**
+ * Tells everyone who reported or supported a complaint that it was fixed: one Bcc email from the admin's
+ * Gmail for web users, and a WhatsApp message for people who reported through the bot.
+ */
 async function notifyFixed(sql, session, report) {
-  const supporters = await sql`SELECT DISTINCT lower(reporter_email) AS email FROM report_supports
-    WHERE report_id = ${report.id} AND reporter_email IS NOT NULL`;
+  const supporters = await sql`SELECT DISTINCT lower(reporter_email) AS email, reporter_phone AS phone
+    FROM report_supports WHERE report_id = ${report.id}`;
   const emails = [...new Set([report.reporter_email?.toLowerCase(), ...supporters.map((s) => s.email)].filter(Boolean))];
-  if (!emails.length) return { notified: 0 };
+  const phones = [...new Set([report.reporter_phone, ...supporters.map((s) => s.phone)].filter(Boolean))];
+
+  let whatsapped = 0;
+  if (phones.length && whatsappConfigured()) {
+    const where = report.location ? ` at ${report.location.split(', ').slice(0, 2).join(', ')}` : '';
+    const text = `🎉 Good news! The ${report.issue_type.toLowerCase()}${where} that you reported has been marked as fixed.\n\nಶುಭ ಸುದ್ದಿ! ನೀವು ವರದಿ ಮಾಡಿದ ಸಮಸ್ಯೆಯನ್ನು ಸರಿಪಡಿಸಲಾಗಿದೆ. ಧನ್ಯವಾದಗಳು.`;
+    // WhatsApp only allows free-form messages within 24 hours of the person's last message; older chats are skipped.
+    const results = await Promise.all(phones.map((p) => sendText(p, text).then(() => true, () => false)));
+    whatsapped = results.filter(Boolean).length;
+  }
+  if (!emails.length) return { notified: whatsapped };
 
   const when = new Date(report.sent_at ?? report.created_at).toLocaleDateString('en-IN', {
     day: 'numeric',
@@ -198,7 +228,15 @@ ${emails.length > 1 ? `${emails.length} citizens reported or supported this comp
     subject: `Fixed: ${report.issue_type}${where}`,
     body,
   });
-  return result.ok ? { notified: emails.length } : { notified: 0, notifyError: result.error };
+  return result.ok ? { notified: emails.length + whatsapped } : { notified: whatsapped, notifyError: result.error };
+}
+
+const BOT_SENDER = 'whatsapp_sender';
+
+/** The admin Google sign-in the WhatsApp bot sends complaints from, or null. */
+export async function botSender(sql) {
+  const [row] = await sql`SELECT value FROM settings WHERE key = ${BOT_SENDER}`;
+  return row ? unseal(row.value) : null;
 }
 
 /**
@@ -218,6 +256,13 @@ export async function adminReports({ method, body, cookies }) {
 
   const sql = await db();
   if (method === 'POST') {
+    if (body?.action === 'bot-sender') {
+      // The bot sends from this admin's Gmail from now on (stored encrypted, like the sign-in cookie).
+      await sql`
+        INSERT INTO settings (key, value) VALUES (${BOT_SENDER}, ${seal(session)})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+      return { json: { botSender: session.email } };
+    }
     const id = str(body?.id, 64);
     if (!id) return { status: 400, json: { error: 'Missing report id.' } };
 
@@ -232,7 +277,7 @@ export async function adminReports({ method, body, cookies }) {
     if (body.action === 'resolve') {
       const [report] = await sql`
         UPDATE reports SET status = 'Resolved', resolved_at = now() WHERE id = ${id} AND status = 'Sent'
-        RETURNING id, issue_type, location, lat, lon, reporter_email, created_at, sent_at`;
+        RETURNING id, issue_type, location, lat, lon, reporter_email, reporter_phone, created_at, sent_at`;
       if (!report) return { json: { resolved: false, error: 'Already fixed or not found.' } };
       const notice = await notifyFixed(sql, session, report).catch((err) => ({ notified: 0, notifyError: err.message }));
       return { json: { resolved: true, ...notice } };
@@ -241,7 +286,7 @@ export async function adminReports({ method, body, cookies }) {
   }
 
   const rows = await sql`
-    SELECT id, created_at, reporter_email, reporter_name, issue_type, severity, department, authority,
+    SELECT id, created_at, reporter_email, reporter_name, reporter_phone, issue_type, severity, department, authority,
            is_civic, description, location, lat, lon, accuracy_m, coords_source, thumb, status, sent_at,
            supporters, escalated_at, resolved_at
     FROM reports WHERE status <> 'Drafted' ORDER BY COALESCE(sent_at, created_at) DESC LIMIT 500`;
@@ -251,5 +296,6 @@ export async function adminReports({ method, body, cookies }) {
            count(*) FILTER (WHERE status = 'Resolved')::int AS resolved,
            COALESCE(sum(supporters), 0)::int AS citizens
     FROM reports WHERE status <> 'Drafted'`;
-  return { json: { totals, reports: rows } };
+  const sender = await botSender(sql);
+  return { json: { totals, reports: rows, botSender: sender?.email ?? null, whatsapp: whatsappConfigured() } };
 }

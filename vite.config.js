@@ -30,6 +30,10 @@ const SERVER_ENV = [
   'SESSION_SECRET',
   'DATABASE_URL',
   'ADMIN_EMAILS',
+  'WHATSAPP_TOKEN',
+  'WHATSAPP_PHONE_ID',
+  'WHATSAPP_VERIFY_TOKEN',
+  'WHATSAPP_APP_SECRET',
 ];
 
 export default defineConfig(({ mode }) => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { adminAction, fetchAllReports } from '../lib/reportsApi.js';
+import { adminAction, fetchAllReports, useMyGmailForBot } from '../lib/reportsApi.js';
 import { SeverityBadge, StatusBadge } from '../components/Badges.jsx';
 import { AlertIcon, ListIcon, PinIcon, TrashIcon } from '../components/Icons.jsx';
 
@@ -64,6 +64,17 @@ export default function AdminScreen() {
       setError(e.message);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function setBotSender() {
+    setError('');
+    try {
+      const res = await useMyGmailForBot();
+      setInfo(`The WhatsApp bot now sends complaints from ${res.botSender}.`);
+      await load();
+    } catch (e) {
+      setError(e.message);
     }
   }
 
@@ -132,6 +143,20 @@ export default function AdminScreen() {
         </div>
       )}
 
+      {data?.whatsapp && (
+        <div className="card admin-bot">
+          <p className="admin-bot-text">
+            <strong>WhatsApp bot</strong>
+            <span className="muted">
+              {data.botSender ? ` sends complaints from ${data.botSender}` : ' can’t send yet: choose the Gmail it sends from'}
+            </span>
+          </p>
+          <button className="btn btn-secondary btn-sm" onClick={setBotSender}>
+            {data.botSender ? 'Use my Gmail instead' : 'Use my Gmail'}
+          </button>
+        </div>
+      )}
+
       {data && (
         <div className="seg admin-filter" role="tablist" aria-label="Filter reports">
           {FILTERS.map((f) => (
@@ -185,10 +210,11 @@ export default function AdminScreen() {
               )}
               <div className="admin-who">
                 <p>
-                  <span className="admin-name">{r.reporter_name || r.reporter_email || 'Not signed in'}</span>
+                  <span className="admin-name">{r.reporter_name || r.reporter_email || r.reporter_phone || 'Not signed in'}</span>
                   <span className="admin-time"> · {timeAgo(r.created_at)}</span>
                 </p>
                 {r.reporter_name && r.reporter_email && <p className="admin-email">{r.reporter_email}</p>}
+                {r.reporter_phone && <p className="admin-email">WhatsApp {r.reporter_phone}</p>}
               </div>
               {!r.is_civic && <p className="admin-line admin-flag">AI flagged: may not be a civic issue</p>}
               {r.supporters > 1 && (

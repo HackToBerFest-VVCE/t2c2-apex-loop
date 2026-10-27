@@ -2348,6 +2348,22 @@ body {
   align-self: flex-start;
 }
 
+.admin-bot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+}
+
+.admin-bot-text {
+  margin: 0;
+  font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .admin-item {
   display: flex;
   gap: 14px;

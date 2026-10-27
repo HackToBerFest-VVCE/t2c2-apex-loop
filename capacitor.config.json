@@ -1,0 +1,11 @@
+{
+  "appId": "app.civiclens.karnataka",
+  "appName": "CivicLens",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#0e1012"
+  }
+}

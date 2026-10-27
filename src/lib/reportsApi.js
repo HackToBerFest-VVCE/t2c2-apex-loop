@@ -2,10 +2,11 @@
 // Drafts are never uploaded: a report only reaches the log once its complaint has been sent.
 // Best-effort: the app works fully offline-first, so a failure here is only logged.
 import { authorityFor } from './authorities.js';
+import { apiFetch } from './api.js';
 
 async function post(payload) {
   try {
-    const res = await fetch('/api/reports', {
+    const res = await apiFetch('/api/reports', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -40,7 +41,7 @@ export function logSent(report) {
 }
 
 async function call(payload) {
-  const res = await fetch('/api/reports', {
+  const res = await apiFetch('/api/reports', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -79,7 +80,7 @@ export async function fetchStatuses(ids) {
 
 /** Admin only — 'resolve' (mark fixed + notify reporters), 'reopen' or 'delete'. The server refuses everyone else. */
 export async function adminAction(id, action) {
-  const res = await fetch('/api/admin/reports', {
+  const res = await apiFetch('/api/admin/reports', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -90,9 +91,22 @@ export async function adminAction(id, action) {
   return data;
 }
 
+/** Admin only — the WhatsApp bot sends complaints from this admin's Gmail from now on. */
+export async function useMyGmailForBot() {
+  const res = await apiFetch('/api/admin/reports', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'bot-sender' }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error ?? 'That action failed.');
+  return data;
+}
+
 /** Admin only — the server refuses everyone else. */
 export async function fetchAllReports() {
-  const res = await fetch('/api/admin/reports', { credentials: 'same-origin' });
+  const res = await apiFetch('/api/admin/reports', { credentials: 'same-origin' });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error ?? `Could not load reports (${res.status}).`);
   return data;

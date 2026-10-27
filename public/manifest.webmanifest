@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "CivicLens",
+  "short_name": "CivicLens",
+  "description": "Snap a civic problem in Karnataka. CivicLens finds the location, picks the right office and sends a formal complaint in English and Kannada.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1012",
+  "theme_color": "#0e1012",
+  "lang": "en-IN",
+  "categories": ["utilities", "government", "lifestyle"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

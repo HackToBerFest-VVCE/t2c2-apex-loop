@@ -1,32 +1,10 @@
 // Browser side of photo analysis: sends the photo to our own /api/analyze endpoint
 // (server/analyze.js), which holds the API keys and talks to the AI models.
-import { DEPARTMENTS, ISSUE_TYPES, ISSUE_TYPES_KN, SEVERITIES } from './constants.js';
+import { apiFetch } from './api.js';
+import { normalize } from './normalize.js';
 
 /** Whole-request limit; the server tries several models within ~50 s. */
 const REQUEST_TIMEOUT_MS = 65_000;
-
-function pick(value, options, fallback) {
-  const v = String(value ?? '').trim().toLowerCase();
-  return options.find((o) => o.toLowerCase() === v) ?? options.find((o) => v.includes(o.toLowerCase())) ?? fallback;
-}
-
-const MANHOLE = 'Open / damaged manhole';
-
-function normalize(raw) {
-  // Models sometimes shorten the label ("Open manhole"), so match on the key word.
-  const issueType = /manhole/i.test(String(raw.issueType ?? '')) ? MANHOLE : pick(raw.issueType, ISSUE_TYPES, 'Other');
-  const isManhole = issueType === MANHOLE;
-  return {
-    isCivicIssue: raw.isCivicIssue !== false,
-    issueType,
-    issueTypeKn: ISSUE_TYPES_KN[issueType],
-    // A damaged manhole can kill someone, so it is always urgent and goes to the drainage authority.
-    severity: isManhole ? 'high' : pick(raw.severity, SEVERITIES, 'medium'),
-    department: isManhole ? 'Water' : pick(raw.department, Object.keys(DEPARTMENTS), 'Roads'),
-    description: String(raw.description ?? '').trim(),
-    descriptionKn: String(raw.descriptionKn ?? '').trim(),
-  };
-}
 
 /**
  * Analyses a photo and returns a normalized assessment.
@@ -38,7 +16,7 @@ export async function analyzeIssue(base64, mimeType, onProgress = () => {}) {
   onProgress('AI is analysing your photo');
   let res;
   try {
-    res = await fetch('/api/analyze', {
+    res = await apiFetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: base64, mimeType }),

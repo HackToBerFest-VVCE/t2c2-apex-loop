@@ -87,7 +87,9 @@ async function getNetworkLocation() {
 
 /** fetch with a time limit, so a stalled lookup can't hold up the whole report. */
 async function fetchJson(url, timeoutMs = 8000) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  // OpenStreetMap asks servers to identify themselves; browsers send their own User-Agent.
+  const headers = typeof window === 'undefined' ? { 'User-Agent': 'CivicLens/1.0 (https://civiclens-rouge.vercel.app)' } : {};
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

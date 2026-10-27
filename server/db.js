@@ -57,6 +57,32 @@ export async function db() {
       CREATE UNIQUE INDEX IF NOT EXISTS report_supports_once
       ON report_supports (report_id, reporter_email) WHERE reporter_email IS NOT NULL`;
     await sql`CREATE INDEX IF NOT EXISTS reports_open_by_dept ON reports (department, lat) WHERE status = 'Sent'`;
+
+    // WhatsApp bot: reporters identified by phone number, each chat's progress, and processed message ids
+    // (WhatsApp may deliver the same message twice).
+    await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS reporter_phone text`;
+    await sql`ALTER TABLE report_supports ADD COLUMN IF NOT EXISTS reporter_phone text`;
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS report_supports_once_phone
+      ON report_supports (report_id, reporter_phone) WHERE reporter_phone IS NOT NULL`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS whatsapp_chats (
+        phone      text PRIMARY KEY,
+        step       text NOT NULL,
+        draft      jsonb,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS whatsapp_seen (
+        message_id text PRIMARY KEY,
+        seen_at    timestamptz NOT NULL DEFAULT now()
+      )`;
+    // Small key/value store, e.g. the admin's encrypted Gmail sign-in that the bot sends from.
+    await sql`
+      CREATE TABLE IF NOT EXISTS settings (
+        key   text PRIMARY KEY,
+        value text NOT NULL
+      )`;
   })().catch((err) => {
     ready = null; // let the next request retry
     throw err;

@@ -6,6 +6,7 @@ import { englishLetter, englishSubject, escalationEmail, kannadaLetter } from '.
 import { addSupport, checkNearby } from '../lib/reportsApi.js';
 import { geocodeText, locateNow } from '../lib/location.js';
 import { sendComplaint } from '../lib/auth.js';
+import { openExternal } from '../lib/api.js';
 import { loadPhoto } from '../lib/photos.js';
 import { SeverityBadge } from '../components/Badges.jsx';
 import { CheckIcon, CopyIcon, DocIcon, EditIcon, GoogleIcon, MailIcon, PinIcon } from '../components/Icons.jsx';
@@ -25,6 +26,8 @@ async function copyText(text) {
 
 // Gmail rejects compose links longer than ~8,100 characters (measured); stay just under that.
 const MAX_LINK_LENGTH = 8000;
+// Outlook's sign-in redirect accepted ~6,500 characters and refused ~10,000 (measured); stay well under.
+const MAX_OUTLOOK_REDIRECT = 6000;
 
 const COMPOSERS = {
   gmail: (to, su, body) =>
@@ -52,12 +55,17 @@ function emailBody(en, kn) {
  */
 function openCompose(service, subject, en, kn) {
   const body = emailBody(en, kn);
-  const url = COMPOSERS[service](COMPLAINT_EMAIL, subject, body);
+  let url = COMPOSERS[service](COMPLAINT_EMAIL, subject, body);
+  // Signed-out Outlook users pass through a microsoft.com page that packs the whole link into its own
+  // address and answers "Bad Request" when that gets long, so Outlook gets the English letter alone.
+  if (service === 'outlook' && encodeURIComponent(url).length > MAX_OUTLOOK_REDIRECT) {
+    url = COMPOSERS.outlook(COMPLAINT_EMAIL, subject, en);
+  }
   if (url.length > MAX_LINK_LENGTH) {
     window.location.href = `mailto:${COMPLAINT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     return 'mailto';
   }
-  window.open(url, '_blank', 'noopener');
+  openExternal(url);
   return service;
 }
 
